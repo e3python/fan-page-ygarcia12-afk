@@ -10,10 +10,11 @@ let score = 0;
 let feedbackRows = [];
 
 // --- Helper Function ---
-function addResult(category, passed, msg, points = 0) {
-    const status = passed ? '✅' : '❌';
-    if (passed) score += points;
-    feedbackRows.push(`| ${status} | **${category}** | ${msg} |`);
+function addResult(category, scoreEarned, maxPoints, msg) {
+    const passed = scoreEarned === maxPoints;
+    const icon = passed ? '✅' : (scoreEarned > 0 ? '⚠️' : '❌');
+    score += scoreEarned;
+    feedbackRows.push(`| ${icon} | **${category}** | ${scoreEarned}/${maxPoints} pts | ${msg} |`);
 }
 
 try {
@@ -29,45 +30,91 @@ try {
     const htmlContent = fs.readFileSync(FILE_PATH, 'utf8');
     const $ = cheerio.load(htmlContent);
 
-    // --- CRITERIA 1: HTML STRUCTURE (3 pts) ---
-    const usedTags = ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'li'].filter(tag => $(tag).length > 0);
-    if (usedTags.length >= 3) {
-        addResult('Structure', true, `Used ${usedTags.length} different tags.`, 3);
-    } else {
-        addResult('Structure', false, `Only used ${usedTags.length} tags. Try adding lists or headers!`, 1);
-    }
-
-    // --- CRITERIA 2: CODE HYGIENE / COMMENTS (3 pts) ---
-    const commentRegex = /<!--[\s\S]*?-->/g;
-    if (commentRegex.test(htmlContent)) {
-        addResult('Comments', true, 'Code is documented with comments.', 3);
-    } else {
-        addResult('Comments', false, 'No comments `<!-- -->` found.', 0);
-    }
-
-    // --- CRITERIA 3: CONTENT (3 pts) ---
-    const hasPara = $('p').length >= 1;
-    const hasList = $('ul').length > 0 || $('ol').length > 0;
+    // =========================================================
+    // RUBRIC ROW 1: HTML Structure & Semantics (Max 3 pts)
+    // Criteria: 3+ different tags + Logical Hierarchy (One H1)
+    // =========================================================
+    const uniqueTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li', 'br', 'hr'].filter(tag => $(tag).length > 0);
+    const h1Count = $('h1').length;
     
-    if (hasPara && hasList) {
-        addResult('Content', true, 'Includes both paragraphs and lists.', 3);
+    let structureScore = 1; // Default to Novice
+    let structureMsg = "Used fewer than 2 tags.";
+
+    if (uniqueTags.length >= 3 && h1Count === 1) {
+        structureScore = 3; // Master Engineer
+        structureMsg = `Excellent! Used ${uniqueTags.length} unique tags and exactly one Main Title (H1).`;
+    } else if (uniqueTags.length >= 2) {
+        structureScore = 2; // Apprentice
+        if (h1Count !== 1) {
+            structureMsg = `Good tag variety (${uniqueTags.length} tags), but hierarchy needs work (found ${h1Count} H1 tags).`;
+        } else {
+            structureMsg = `Good start, but try using more tag types (only found ${uniqueTags.length}).`;
+        }
+    }
+    addResult('Structure & Semantics', structureScore, 3, structureMsg);
+
+
+    // =========================================================
+    // RUBRIC ROW 2: Code Hygiene (Max 3 pts)
+    // Criteria: Comments present
+    // =========================================================
+    const commentRegex = /<!--[\s\S]*?-->/g;
+    const hasComments = commentRegex.test(htmlContent);
+    
+    if (hasComments) {
+        addResult('Code Hygiene', 3, 3, 'Comments found! Good job documenting your code.');
     } else {
-        addResult('Content', false, 'Missing a List or Paragraphs.', 1);
+        addResult('Code Hygiene', 0, 3, 'No comments found. Use `<!-- Note -->` to label sections.');
     }
 
-    // --- CRITERIA 4: HIERARCHY (3 pts) ---
-    if ($('h1').length === 1) {
-        addResult('Hierarchy', true, 'Has exactly one Main Title (H1).', 3);
+
+    // =========================================================
+    // RUBRIC ROW 3: Content & Planning (Max 3 pts)
+    // Criteria: Substantial page (Title + Para + List)
+    // =========================================================
+    const hasH1 = $('h1').length > 0;
+    const hasP = $('p').length > 0;
+    const hasList = $('ul').length > 0 || $('ol').length > 0;
+
+    let contentScore = 1;
+    let contentMsg = "Page is missing major requirements (Title, List, or Paragraphs).";
+
+    if (hasH1 && hasP && hasList) {
+        contentScore = 3;
+        contentMsg = "Page is substantial! Includes Title, Paragraphs, and a List.";
+    } else if (hasH1 && (hasP || hasList)) {
+        contentScore = 2;
+        const missing = !hasP ? "Paragraphs" : "List";
+        contentMsg = `Good start, but missing a ${missing}.`;
+    }
+    addResult('Content & Planning', contentScore, 3, contentMsg);
+
+
+    // =========================================================
+    // RUBRIC ROW 4: Syntax & Bugs (Max 3 pts)
+    // Criteria: Valid syntax, content appears on screen
+    // =========================================================
+    // Cheerio is forgiving, so we check if body text exists and is substantial.
+    // If syntax is very broken, text usually won't render or will be very short.
+    const bodyText = $('body').text().trim();
+    
+    if (bodyText.length > 50) {
+        addResult('Syntax & Bugs', 3, 3, 'Code renders content to the screen correctly.');
+    } else if (bodyText.length > 0) {
+        addResult('Syntax & Bugs', 2, 3, 'Content appears very thin. Check for unclosed tags.');
     } else {
-        addResult('Hierarchy', false, `Found ${$('h1').length} H1 tags. (Should be exactly 1).`, 0);
+        addResult('Syntax & Bugs', 1, 3, 'Page appears empty. Major syntax errors likely.');
     }
 
-    // --- GENERATE SUMMARY ---
+
+    // =========================================================
+    // FINAL REPORT
+    // =========================================================
     const summary = `
 # 📝 Grading Report: HTML Fan Page
 
-| Status | Category | Feedback |
-| :---: | :--- | :--- |
+| Status | Category | Score | Feedback |
+| :---: | :--- | :--- | :--- |
 ${feedbackRows.join('\n')}
 
 ### 🏆 Total Score: ${score} / ${MAX_SCORE}
