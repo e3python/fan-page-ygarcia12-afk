@@ -24,6 +24,43 @@ try {
     const htmlContent = fs.readFileSync(FILE_PATH, 'utf8');
 
     // =========================================================
+    // STEP 0: TEMPLATE / LOW EFFORT DETECTION
+    // =========================================================
+    const $ = cheerio.load(htmlContent, { sourceCodeLocationInfo: true });
+    
+    // FIX: Use root().text() to catch text even if it's outside <body> due to broken tags
+    const allText = $.root().text().replace(/\s+/g, ' ').trim();
+    const characterCount = allText.length;
+    
+    // Check for "Default/Boilerplate" titles
+    const pageTitle = $('title').text().trim().toLowerCase();
+    // It is default if it is 'document', 'title', or empty
+    const isDefaultTitle = pageTitle === 'document' || pageTitle === 'title' || pageTitle === '';
+
+    // Check for valid block tags
+    const hasBlockTags = $('body').find('p, h1, h2, h3, li, div').length > 0;
+    
+    // DRAFT STATE DETECTION
+    // High character count (>60) but NO structure tags.
+    const isDraftState = characterCount > 60 && !hasBlockTags;
+
+    // FAIL CONDITION: Minimal text AND no tags.
+    if (characterCount < 40 && !hasBlockTags) {
+        addResult('Project Status', 0, 12, `❌ **Unsubmitted / Incomplete:** Your page only has ${characterCount} characters of text. Please add your content!`);
+        const summary = `
+# 📝 Grading Report: HTML Fan Page
+| Status | Category | Score | Feedback |
+| :---: | :--- | :--- | :--- |
+${feedbackRows.join('\n')}
+### 🏆 Total Score: 0 / ${MAX_SCORE}
+`;
+        if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+        fs.writeFileSync('grading-feedback.md', summary);
+        console.log(summary);
+        process.exit(1);
+    }
+
+    // =========================================================
     // STEP 1: STRICT VALIDATION (html-validate)
     // =========================================================
     const validator = new HtmlValidate({
@@ -44,21 +81,12 @@ try {
     const criticalErrors = validErrors.filter(msg => msg.severity === 2);
     
     // =========================================================
-    // STEP 2: LOAD PARSER (Cheerio with Location Info)
+    // STEP 2: MANUAL H1 PLACEMENT CHECK
     // =========================================================
-    // We enable sourceCodeLocationInfo to get the exact line/index of tags
-    const $ = cheerio.load(htmlContent, { sourceCodeLocationInfo: true });
-
-    // =========================================================
-    // STEP 3: MANUAL H1 PLACEMENT CHECK
-    // =========================================================
-    // Logic: If the H1 starts BEFORE the Body tag, it's a structure error.
     let h1PlacementError = false;
-    
     const bodyTag = $('body').get(0);
     const h1Tag = $('h1').get(0);
 
-    // Helper to safely get start index (works for parse5/cheerio versions)
     function getStartIndex(node) {
         if (!node) return null;
         if (typeof node.startIndex === 'number') return node.startIndex;
@@ -69,31 +97,26 @@ try {
     const bodyStart = getStartIndex(bodyTag);
     const h1Start = getStartIndex(h1Tag);
 
-    // Scenario A: H1 and Body both exist and have locations.
     if (bodyStart !== null && h1Start !== null) {
-        if (h1Start < bodyStart) {
-            h1PlacementError = true;
-        }
-    } 
-    // Scenario B: Body has NO location (Implicitly created by parser) BUT user wrote "<body>" in file.
-    // This means content (like H1) forced the body open before the actual <body> tag appeared.
-    else if (bodyTag && bodyStart === null && htmlContent.toLowerCase().includes('<body')) {
+        if (h1Start < bodyStart) h1PlacementError = true;
+    } else if (bodyTag && bodyStart === null && htmlContent.toLowerCase().includes('<body')) {
         h1PlacementError = true;
-    }
-    // Scenario C: H1 exists but NO body tag at all in DOM (Rare, but possible if malformed)
-    else if (h1Tag && !bodyTag) {
+    } else if (h1Tag && !bodyTag) {
         h1PlacementError = true;
     }
 
     // =========================================================
-    // STEP 4: SYNTAX SCORING
+    // STEP 3: SYNTAX SCORING
     // =========================================================
     let syntaxScore = 3;
     let syntaxMsg = "Syntax looks clean.";
     
     const hasBadList = criticalErrors.some(e => e.message.includes('<ul>') && e.message.includes('content'));
 
-    if (h1PlacementError) {
+    if (isDraftState) {
+        syntaxScore = 1; 
+        syntaxMsg = "⚠️ **Draft Detected:** You have content, but no HTML tags! Wrap your title in `<h1>` and text in `<p>` tags.";
+    } else if (h1PlacementError) {
         syntaxScore = 1;
         syntaxMsg = "❌ Critical Syntax: Your `<h1>` tag is placed BEFORE the `<body>` tag. It must be inside.";
     } else if (criticalErrors.length > 0) {
@@ -106,10 +129,8 @@ try {
     }
 
     // =========================================================
-    // STEP 5: STRUCTURE & SEMANTICS
+    // STEP 4: STRUCTURE & SEMANTICS
     // =========================================================
-    
-    // Count Valid Tags (Check if they have content)
     let validTagCount = 0;
     function isValidTag(tagName) {
         const el = $(tagName);
@@ -125,11 +146,13 @@ try {
     if (hasValidList) validTagCount++;
 
     const h1Count = $('h1').length;
-    
     let structureScore = 1;
     let structureMsg = "Used fewer than 2 tag types.";
 
-    if (syntaxScore === 1) {
+    if (isDraftState) {
+        structureScore = 1;
+        structureMsg = "⚠️ **Next Step:** You need to pick which tags (`h1`, `p`, `ul`) match your content.";
+    } else if (syntaxScore === 1) {
         structureScore = 1; 
         structureMsg = "⚠️ Cannot rate Structure because Syntax is broken. Fix your HTML errors first!";
     } else if (validTagCount >= 3 && h1Count === 1) {
@@ -141,7 +164,7 @@ try {
     }
 
     // =========================================================
-    // STEP 6: CODE HYGIENE
+    // STEP 5: CODE HYGIENE
     // =========================================================
     const commentRegex = /<!--[\s\S]*?-->/g;
     const hasComments = commentRegex.test(htmlContent);
@@ -149,15 +172,17 @@ try {
     let hygieneMsg = hasComments ? "Comments found!" : "No comments found.";
 
     // =========================================================
-    // STEP 7: CONTENT
+    // STEP 6: CONTENT
     // =========================================================
     const hasH1 = isValidTag('h1');
     const hasP = isValidTag('p');
-    
     let contentScore = 1;
     let contentMsg = "Page is missing major requirements.";
 
-    if (hasH1 && hasP && hasValidList) {
+    if (isDraftState) {
+        contentScore = 2; 
+        contentMsg = "✅ **Content Found:** Good job writing your text! Now turn it into code.";
+    } else if (hasH1 && hasP && hasValidList) {
         contentScore = 3;
         contentMsg = "Page is substantial! (Title + Para + List)";
     } else if (hasH1 && (hasP || hasValidList)) {
@@ -172,6 +197,12 @@ try {
     addResult('Code Hygiene', hygieneScore, 3, hygieneMsg);
     addResult('Content & Planning', contentScore, 3, contentMsg);
     addResult('Syntax & Bugs', syntaxScore, 3, syntaxMsg);
+
+    // BONUS CHECK: Did they customize the Browser Tab Title?
+    // This isn't in the rubric, but it's an "Exceeded Expectations" marker.
+    if (!isDefaultTitle && !isDraftState) {
+        feedbackRows.push(`| 🌟 | **Bonus: Browser Title** | -- | You changed the browser tab name to "${pageTitle}". Way to go above and beyond! |`);
+    }
 
     const summary = `
 # 📝 Grading Report: HTML Fan Page
