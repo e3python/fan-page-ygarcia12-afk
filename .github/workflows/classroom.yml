@@ -1,4 +1,4 @@
-name: HTML Fan Page Autograding
+name: HTML Fan Page Grader
 
 on:
   push:
@@ -10,18 +10,69 @@ on:
 jobs:
   grade:
     runs-on: ubuntu-latest
-
+    name: Auto-Grader
+    
     steps:
-    - name: Checkout student code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '16'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-    - name: Install dependencies
-      run: npm install
+      - name: Install Tools
+        run: npm install cheerio
 
-    - name: Run Autograder
-      run: node .github/scripts/grade.js
+      - name: Run Grading Script
+        run: node .github/scripts/grade.js
+        env:
+          CI: true
+
+      - name: Post Feedback to PR
+        if: always() # Run even if grading failed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              // 1. Read the feedback file
+              if (!fs.existsSync('grading-feedback.md')) {
+                console.log('No grading feedback file found.');
+                return;
+              }
+              const feedbackBody = fs.readFileSync('grading-feedback.md', 'utf8');
+
+              // 2. Search for the PR
+              // (If run on PR event, use that. If run on Push, search for open PRs)
+              let prNumber = context.payload.pull_request ? context.payload.pull_request.number : null;
+
+              if (!prNumber) {
+                const { data: pulls } = await github.rest.pulls.list({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+                  state: 'open'
+                });
+                
+                if (pulls.length > 0) {
+                  prNumber = pulls[0].number;
+                }
+              }
+
+              // 3. Post Comment (if PR exists)
+              if (prNumber) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: feedbackBody
+                });
+                console.log(`✅ Feedback posted to PR #${prNumber}`);
+              } else {
+                console.log('ℹ️ No active Pull Request found. Skipping comment.');
+              }
+
+            } catch (error) {
+              console.log(`⚠️ Error posting feedback (swallowed): ${error.message}`);
+            }

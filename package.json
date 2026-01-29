@@ -1,6 +1,6 @@
 {
   "name": "html-fan-page-autograder",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Autograder for Lesson 5 Mini-Project",
   "main": ".github/scripts/grade.js",
   "scripts": {
@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
+    "html-validate": "^8.0.0",
     "chalk": "^4.1.2"
   }
 }
