@@ -8,11 +8,27 @@ const MAX_SCORE = 12;
 let score = 0;
 let feedbackRows = [];
 
+// --- TEACHING MOMENTS (Generic Examples for Code Review) ---
+const TIPS = {
+    "element-permitted-content": "❌ **Illegal Content:** You have text or an invalid tag directly inside a parent that doesn't allow it.\n\n**Example Fix:**\n```html\n<ul>\n  <li>Item 1</li> <!-- Text must be inside li -->\n</ul>\n```",
+    "element-permitted-order": "❌ **Wrong Order:** This tag is in the wrong place.\n\n**Rule of Thumb:**\n* `<h1>`, `<p>`, `<ul>` go inside `<body>`\n* `<title>` goes inside `<head>`",
+    "close-order": "❌ **Unclosed Tag:** You opened a tag but didn't close it, or closed them in the wrong order.\n\n**Example Fix:**\n```html\n<p><strong>Bold Text</strong></p>\n```",
+    "no-implicit-close": "❌ **Missing Closing Tag:** This element must be explicitly closed.\n\n**Example:** `</h1>` or `</p>`",
+    "draft-state": "⚠️ **Draft Detected:** This looks like raw text. Wrap it in HTML tags!\n\n**Example:**\n```html\n<h1>My Title</h1>\n<p>My story...</p>\n```"
+};
+
 function addResult(category, scoreEarned, maxPoints, msg) {
     const passed = scoreEarned === maxPoints;
     const icon = passed ? '✅' : (scoreEarned > 0 ? '⚠️' : '❌');
     score += scoreEarned;
     feedbackRows.push(`| ${icon} | **${category}** | ${scoreEarned}/${maxPoints} pts | ${msg} |`);
+}
+
+// Helper to output GitHub Annotations (The "Code Review" comments)
+function logAnnotation(level, message, line, title) {
+    // Sanitize newlines for the annotation format
+    const cleanMsg = message.replace(/\n/g, '%0A');
+    console.log(`::${level} file=${FILE_PATH},line=${line},title=${title}::${cleanMsg}`);
 }
 
 try {
@@ -34,14 +50,12 @@ try {
     
     // Check for "Default/Boilerplate" titles
     const pageTitle = $('title').text().trim().toLowerCase();
-    // It is default if it is 'document', 'title', or empty
     const isDefaultTitle = pageTitle === 'document' || pageTitle === 'title' || pageTitle === '';
 
     // Check for valid block tags
     const hasBlockTags = $('body').find('p, h1, h2, h3, li, div').length > 0;
     
     // DRAFT STATE DETECTION
-    // High character count (>60) but NO structure tags.
     const isDraftState = characterCount > 60 && !hasBlockTags;
 
     // FAIL CONDITION: Minimal text AND no tags.
@@ -78,6 +92,15 @@ ${feedbackRows.join('\n')}
 
     const report = validator.validateString(htmlContent);
     const validErrors = report && report.results && report.results.length > 0 && report.results[0].messages ? report.results[0].messages : [];
+    
+    // LOG ANNOTATIONS FOR VALIDATION ERRORS
+    validErrors.forEach(err => {
+        const severity = err.severity === 2 ? 'error' : 'warning';
+        // Use our custom tip if available, otherwise use the validator message
+        const tip = TIPS[err.ruleId] ? `${err.message}\n\n${TIPS[err.ruleId]}` : err.message;
+        logAnnotation(severity, tip, err.line, `Syntax: ${err.ruleId}`);
+    });
+
     const criticalErrors = validErrors.filter(msg => msg.severity === 2);
     
     // =========================================================
@@ -94,6 +117,13 @@ ${feedbackRows.join('\n')}
         return null;
     }
 
+    function getLineNumber(node) {
+        if (node && node.sourceCodeLocation && node.sourceCodeLocation.startLine) {
+            return node.sourceCodeLocation.startLine;
+        }
+        return 1; // Default
+    }
+
     const bodyStart = getStartIndex(bodyTag);
     const h1Start = getStartIndex(h1Tag);
 
@@ -103,6 +133,10 @@ ${feedbackRows.join('\n')}
         h1PlacementError = true;
     } else if (h1Tag && !bodyTag) {
         h1PlacementError = true;
+    }
+
+    if (h1PlacementError && h1Tag) {
+        logAnnotation('error', TIPS["element-permitted-order"], getLineNumber(h1Tag), "Structure Error");
     }
 
     // =========================================================
@@ -116,6 +150,8 @@ ${feedbackRows.join('\n')}
     if (isDraftState) {
         syntaxScore = 1; 
         syntaxMsg = "⚠️ **Draft Detected:** You have content, but no HTML tags! Wrap your title in `<h1>` and text in `<p>` tags.";
+        // Log a general annotation at line 1
+        logAnnotation('warning', TIPS["draft-state"], 1, "Draft State Detected");
     } else if (h1PlacementError) {
         syntaxScore = 1;
         syntaxMsg = "❌ Critical Syntax: Your `<h1>` tag is placed BEFORE the `<body>` tag. It must be inside.";
@@ -189,14 +225,6 @@ ${feedbackRows.join('\n')}
         contentScore = 2;
         contentMsg = "Good start, but missing Paragraphs or a List.";
     }
-
-    // =========================================================
-    // FINAL REPORT
-    // =========================================================
-    addResult('Structure & Semantics', structureScore, 3, structureMsg);
-    addResult('Code Hygiene', hygieneScore, 3, hygieneMsg);
-    addResult('Content & Planning', contentScore, 3, contentMsg);
-    addResult('Syntax & Bugs', syntaxScore, 3, syntaxMsg);
 
     // BONUS CHECK: Did they customize the Browser Tab Title?
     // This isn't in the rubric, but it's an "Exceeded Expectations" marker.
