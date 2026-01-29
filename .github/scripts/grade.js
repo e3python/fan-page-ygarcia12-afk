@@ -226,6 +226,14 @@ ${feedbackRows.join('\n')}
         contentMsg = "Good start, but missing Paragraphs or a List.";
     }
 
+    // =========================================================
+    // FINAL REPORT
+    // =========================================================
+    addResult('Structure & Semantics', structureScore, 3, structureMsg);
+    addResult('Code Hygiene', hygieneScore, 3, hygieneMsg);
+    addResult('Content & Planning', contentScore, 3, contentMsg);
+    addResult('Syntax & Bugs', syntaxScore, 3, syntaxMsg);
+
     // BONUS CHECK: Did they customize the Browser Tab Title?
     // This isn't in the rubric, but it's an "Exceeded Expectations" marker.
     if (!isDefaultTitle && !isDraftState) {
