@@ -1,0 +1,69 @@
+/* Add your styles here */
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    padding: 2px;
+    background-color: #ec96966e;
+}
+
+h1 {
+    color: #804c4ccb;
+    font: bold 36px ;
+    text-align: center;
+    font: bold 36px Arial, sans-serif;
+}
+
+h3 {
+    font: italic bold 16px Arial, sans-serif;
+    color: #804c4ccb;
+        text-align: center;
+    font: bold 24px Arial, sans-serif;
+}
+
+img {
+    width:400px;
+    height: 350px;
+    display: block;
+    margin: 0 auto;
+    border-style: dotted;
+    border-width: 4px;
+    border-color: #e617179a;
+}
+
+.album-cover {
+    float: left;
+    margin-right: 20px;
+    margin-bottom: 10px;
+    border-style: dotted;
+    border-width: 4px;
+    border-color: #e617179a;
+}
+
+.citation {
+    clear: right;
+}
+.maria-singing {
+    width: 500px;
+    height: 350px;
+    margin-left: 20px auto;
+    border-style: dotted;
+    border-width: 4px;
+    border-color: #e617179a;
+    float: right;
+}
+p
+{
+    font-size: 16px;
+    line-height: 1.5;
+    color: #a64646;
+     font: italic bold 16px Arial, sans-serif;
+    
+}
+
+ol, li {
+    font: italic bold 16px Arial, sans-serif;
+    color: #555;
+}
+
+/* Additional styles can be added below */
